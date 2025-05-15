@@ -2,6 +2,7 @@ package br.com.dio.ui;
 
 import br.com.dio.dto.BoardColumnInfoDTO;
 import br.com.dio.persistence.entity.BoardColumnEntity;
+import br.com.dio.persistence.entity.BoardColumnKindEnum;
 import br.com.dio.persistence.entity.BoardEntity;
 import br.com.dio.persistence.entity.CardEntity;
 import br.com.dio.service.BoardColumnQueryService;
@@ -36,7 +37,8 @@ public class BoardMenu {
                 System.out.println("7 - Ver coluna com cards");
                 System.out.println("8 - Ver card");
                 System.out.println("9 - Voltar para o menu anterior um card");
-                System.out.println("10 - Sair");
+                System.out.println("10 - Ver estatísticas do board");  // Nova opção
+                System.out.println("11 - Sair");                      // Opção de sair atualizada
                 option = scanner.nextInt();
                 switch (option) {
                     case 1 -> createCard();
@@ -48,7 +50,8 @@ public class BoardMenu {
                     case 7 -> showColumn();
                     case 8 -> showCard();
                     case 9 -> System.out.println("Voltando para o menu anterior");
-                    case 10 -> System.exit(0);
+                    case 10 -> showBoardStatistics();                // Nova opção
+                    case 11 -> System.exit(0);                       // Opção de sair atualizada
                     default -> System.out.println("Opção inválida, informe uma opção do menu");
                 }
             }
@@ -172,5 +175,62 @@ public class BoardMenu {
                             () -> System.out.printf("Não existe um card com o id %s\n", selectedCardId));
         }
     }
-
+    
+    private void showBoardStatistics() throws SQLException {
+        try(var connection = getConnection()) {
+            var boardQueryService = new BoardQueryService(connection);
+            var cardQueryService = new CardQueryService(connection);
+            
+            var optional = boardQueryService.showBoardDetails(entity.getId());
+            optional.ifPresent(b -> {
+                System.out.printf("\n=== ESTATÍSTICAS DO BOARD: %s ===\n", b.name());
+                
+                int totalCards = 0;
+                int blockedCards = 0;
+                int finishedCards = 0;
+                int canceledCards = 0;
+                int inProgressCards = 0;
+                
+                for (var column : b.columns()) {
+                    totalCards += column.cardsAmount();
+                    
+                    if (column.kind().equals(BoardColumnKindEnum.FINAL.name())) {
+                        finishedCards += column.cardsAmount();
+                    } else if (column.kind().equals(BoardColumnKindEnum.CANCEL.name())) {
+                        canceledCards += column.cardsAmount();
+                    } else if (column.kind().equals(BoardColumnKindEnum.INITIAL.name()) || 
+                             column.kind().equals(BoardColumnKindEnum.PENDING.name())) {
+                        inProgressCards += column.cardsAmount();
+                        
+                        
+                        try {
+                            var columnDetails = new BoardColumnQueryService(connection).findById(column.id());
+                            if (columnDetails.isPresent()) {
+                                for (var card : columnDetails.get().getCards()) {
+                                    var cardDetails = cardQueryService.findById(card.getId());
+                                    if (cardDetails.isPresent() && cardDetails.get().blocked()) {
+                                        blockedCards++;
+                                    }
+                                }
+                            }
+                        } catch (SQLException e) {
+                            System.out.println("Erro ao verificar cards bloqueados: " + e.getMessage());
+                        }
+                    }
+                }
+                
+                
+                System.out.printf("Total de cards: %d\n", totalCards);
+                System.out.printf("Cards em progresso: %d (%.1f%%)\n", inProgressCards, 
+                        totalCards > 0 ? (inProgressCards * 100.0 / totalCards) : 0);
+                System.out.printf("Cards bloqueados: %d (%.1f%%)\n", blockedCards, 
+                        totalCards > 0 ? (blockedCards * 100.0 / totalCards) : 0);
+                System.out.printf("Cards finalizados: %d (%.1f%%)\n", finishedCards, 
+                        totalCards > 0 ? (finishedCards * 100.0 / totalCards) : 0);
+                System.out.printf("Cards cancelados: %d (%.1f%%)\n", canceledCards, 
+                        totalCards > 0 ? (canceledCards * 100.0 / totalCards) : 0);
+                System.out.println("======================================\n");
+            });
+        }
+    }
 }
